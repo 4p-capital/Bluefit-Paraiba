@@ -1,0 +1,13 @@
+/* ============================================================================
+   BLUE DESK - TYPOGRAPHY
+   Professional font system for premium chat application
+   ============================================================================ */
+
+/* Inter - UI Font (400, 500, 600, 700) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* Poppins - Display Font for Titles (500, 600, 700) */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&display=swap');
+
+/* Fallback handwriting fonts for special components (Notepad) */
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Indie+Flower&display=swap');

@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "lib": ["deno.window", "dom", "dom.iterable"]
+  },
+  "imports": {
+    "hono": "npm:hono@^3.11.7",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@^2.39.0"
+  },
+  "entrypoint": "index.tsx"
+}
