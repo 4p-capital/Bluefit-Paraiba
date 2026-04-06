@@ -111,7 +111,8 @@ export function DashboardModule() {
   const [topAgents, setTopAgents] = useState<any[]>([]);
   const [responseTimeData, setResponseTimeData] = useState<any[]>([]);
   const [messageTypeDistribution, setMessageTypeDistribution] = useState<any[]>([]);
-  const [selectedUnit] = useState<string>('all');
+  const [selectedUnit, setSelectedUnit] = useState<string>('all');
+  const [availableUnits, setAvailableUnits] = useState<{ id: number; name: string }[]>([]);
   // dateRange = o que está aplicado (dispara fetch)
   // draftRange = o que o usuário está selecionando no picker (não dispara nada)
   const initialRange: DateRange = { from: subDays(new Date(), 7), to: new Date() };
@@ -125,6 +126,13 @@ export function DashboardModule() {
   const [leadsBySituation, setLeadsBySituation] = useState<any[]>([]);
   const [leadsByOrigem, setLeadsByOrigem] = useState<any[]>([]);
   const [tagsByCount, setTagsByCount] = useState<any[]>([]);
+
+  // Carregar unidades
+  useEffect(() => {
+    supabase.from('units').select('id, name').order('name').then(({ data }) => {
+      if (data) setAvailableUnits(data);
+    });
+  }, []);
 
   const { startDate, endDate, previousStartDate, days } = useMemo(() => {
     const from = dateRange.from ? startOfDay(dateRange.from) : startOfDay(subDays(new Date(), 7));
@@ -784,8 +792,24 @@ export function DashboardModule() {
               <p className="text-slate-600 mt-1">Análise completa do atendimento</p>
             </div>
 
-            {/* Filtro de período */}
+            {/* Filtros */}
             <div className="flex flex-wrap items-center gap-2">
+              {/* Unidade */}
+              <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                <SelectTrigger className="h-9 text-xs border-slate-200 bg-white rounded-lg w-[160px] hover:border-[#0028e6] transition-colors">
+                  <div className="flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    <SelectValue placeholder="Unidade" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas unidades</SelectItem>
+                  {availableUnits.map(unit => (
+                    <SelectItem key={unit.id} value={String(unit.id)}>{unit.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               {/* Date Range Picker */}
               <Popover open={datePickerOpen} onOpenChange={(open) => {
                 setDatePickerOpen(open);
