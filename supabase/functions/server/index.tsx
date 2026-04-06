@@ -417,7 +417,22 @@ app.post("/make-server-844b77a1/api/auth/signup", async (c) => {
     }
 
     console.log('✅ Profile criado com sucesso!');
-    // Telefone já salvo na tabela profiles (campo telefone) — não precisa de tabela separada
+
+    // Inserir na profile_units (unidade principal)
+    if (id_unidade) {
+      const { error: unitError } = await supabaseAdmin
+        .from('profile_units')
+        .insert({
+          profile_id: authData.user.id,
+          unit_id: Number(id_unidade),
+          is_primary: true,
+        });
+      if (unitError) {
+        console.warn('⚠️ Erro ao inserir profile_units (não crítico):', unitError.message);
+      } else {
+        console.log('✅ profile_units criado com unidade principal:', id_unidade);
+      }
+    }
 
     // 📧 ENVIAR EMAIL DE CONFIRMAÇÃO
     // Estratégia: /auth/v1/resend PRIMEIRO (gera token + envia email).
