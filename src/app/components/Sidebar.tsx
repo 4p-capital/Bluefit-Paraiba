@@ -72,12 +72,12 @@ export function Sidebar() {
       { id: 'home', label: 'Início', icon: Home, path: '/' },
     ];
 
-    // Dashboard: Gerente+ (isManager)
-    if (userProfile.isManager) {
+    // Dashboard geral: Administrador apenas
+    if (userProfile.isFullAdmin) {
       items.push({ id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/dashboard' });
     }
 
-    // Dashboard do Time: Supervisor+ (isAdmin)
+    // Dashboard da Unidade: Supervisor+ (isAdmin = Supervisor, Gerente, Administrador)
     if (userProfile.isAdmin) {
       items.push({ id: 'team-dashboard', label: 'Dashboard da Unidade', icon: UsersRound, path: '/team-dashboard' });
     }

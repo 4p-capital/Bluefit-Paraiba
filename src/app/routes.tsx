@@ -104,7 +104,7 @@ function UpdatePasswordPage() {
 
 function DashboardPage() {
   return (
-    <RoleGuard requiredRole="manager">
+    <RoleGuard requiredRole="admin">
       <LazyPage>
         <ErrorBoundary>
           <DashboardModule />

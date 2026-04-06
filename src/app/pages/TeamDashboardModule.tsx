@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { MessageSquare, Users, Clock, Activity, Send, UsersRound, CalendarDays, User, CheckCircle2, Inbox } from 'lucide-react';
+import { MessageSquare, Users, Clock, Activity, Send, UsersRound, CalendarDays, User, CheckCircle2, Inbox, Building2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { Popover, PopoverTrigger, PopoverContent } from '@/app/components/ui/popover';
 import { Calendar } from '@/app/components/ui/calendar';
@@ -85,6 +85,7 @@ export function TeamDashboardModule() {
 
   const [loading, setLoading] = useState(true);
   const [selectedOperator, setSelectedOperator] = useState<string>('all');
+  const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null);
 
   // Date range (mesmo pattern do DashboardModule)
   const initialRange: DateRange = { from: subDays(new Date(), 7), to: new Date() };
@@ -149,18 +150,36 @@ export function TeamDashboardModule() {
     return all;
   }
 
+  // Unidades disponíveis para este usuário
+  const userUnitIds = useMemo(() => {
+    if (!userProfile.isLoaded) return [];
+    return userProfile.unitIds.length > 0
+      ? userProfile.unitIds
+      : (userProfile.id_unidade != null ? [userProfile.id_unidade] : []);
+  }, [userProfile.isLoaded, userProfile.unitIds, userProfile.id_unidade]);
+
+  const hasMultipleUnits = userUnitIds.length > 1;
+
+  // Auto-selecionar unidade ao carregar perfil
   useEffect(() => {
-    if (userProfile.isLoaded) loadData();
-  }, [startDate, endDate, userProfile.isLoaded]);
+    if (userUnitIds.length > 0 && selectedUnitId === null) {
+      // Seleciona a unidade principal (id_unidade) ou a primeira disponível
+      setSelectedUnitId(userProfile.id_unidade ?? userUnitIds[0]);
+    }
+  }, [userUnitIds, userProfile.id_unidade]);
+
+  // Unidade ativa para filtro (a selecionada ou fallback para a primeira)
+  const activeUnitId = selectedUnitId ?? userUnitIds[0] ?? null;
+
+  useEffect(() => {
+    if (userProfile.isLoaded && activeUnitId !== null) loadData();
+  }, [startDate, endDate, userProfile.isLoaded, activeUnitId]);
 
   async function loadData() {
     setLoading(true);
     try {
-      const userUnitIds = userProfile.unitIds.length > 0
-        ? userProfile.unitIds
-        : (userProfile.id_unidade != null ? [userProfile.id_unidade] : []);
-
       const isFullAdmin = userProfile.isFullAdmin;
+      const filterUnitIds = isFullAdmin ? [] : (activeUnitId ? [activeUnitId] : userUnitIds);
 
       const [conversations, messages, teamProfiles, contacts, tags] = await Promise.all([
         fetchAll('conversations',
@@ -182,14 +201,14 @@ export function TeamDashboardModule() {
       ]);
 
       // Filtrar por unidade
-      const fConversations = isFullAdmin ? conversations : conversations.filter((c: any) => userUnitIds.includes(c.unit_id));
+      const fConversations = isFullAdmin ? conversations : conversations.filter((c: any) => filterUnitIds.includes(c.unit_id));
       const fConvIds = new Set(fConversations.map((c: any) => c.id));
       const fMessages = messages.filter((m: any) => fConvIds.has(m.conversation_id));
-      const fContacts = isFullAdmin ? contacts : contacts.filter((c: any) => userUnitIds.includes(c.unit_id));
+      const fContacts = isFullAdmin ? contacts : contacts.filter((c: any) => filterUnitIds.includes(c.unit_id));
       const fTags = tags.filter((t: any) => fConvIds.has(t.conversation_id));
 
-      // Operadores da(s) unidade(s)
-      const fTeam = isFullAdmin ? teamProfiles : teamProfiles.filter((p: any) => userUnitIds.includes(p.id_unidade));
+      // Operadores da unidade selecionada
+      const fTeam = isFullAdmin ? teamProfiles : teamProfiles.filter((p: any) => filterUnitIds.includes(p.id_unidade));
       const ops = fTeam.map((p: any) => ({
         id: p.id,
         name: p.nome && p.sobrenome ? `${p.nome} ${p.sobrenome}` : p.email || 'Sem nome',
@@ -405,11 +424,14 @@ export function TeamDashboardModule() {
   // ── Estilo tooltip ──
   const tooltipStyle = { backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' };
 
-  // Unit name
+  // Unit name (da unidade selecionada)
   const unitLabel = useMemo(() => {
+    if (activeUnitId && userProfile.unitNames?.[activeUnitId]) {
+      return userProfile.unitNames[activeUnitId];
+    }
     const names = Object.values(userProfile.unitNames || {});
-    return names.length > 0 ? names.join(', ') : 'Todas unidades';
-  }, [userProfile.unitNames]);
+    return names.length > 0 ? names.join(', ') : 'Unidade';
+  }, [userProfile.unitNames, activeUnitId]);
 
   // ══════════════════════════════════════
   // RENDER
@@ -462,6 +484,25 @@ export function TeamDashboardModule() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {/* Filtro de unidade (só aparece se gerente/admin com múltiplas unidades) */}
+              {hasMultipleUnits && (
+                <Select value={String(activeUnitId)} onValueChange={(v) => { setSelectedUnitId(Number(v)); setSelectedOperator('all'); }}>
+                  <SelectTrigger className="h-9 text-xs border-slate-200 bg-white rounded-lg w-[160px] hover:border-[#8b5cf6] transition-colors">
+                    <div className="flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                      <SelectValue placeholder="Unidade" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userUnitIds.map(uid => (
+                      <SelectItem key={uid} value={String(uid)}>
+                        {userProfile.unitNames?.[uid] || `Unidade ${uid}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
               {/* Filtro de operador */}
               <Select value={selectedOperator} onValueChange={setSelectedOperator}>
                 <SelectTrigger className="h-9 text-xs border-slate-200 bg-white rounded-lg w-[180px] hover:border-[#8b5cf6] transition-colors">
