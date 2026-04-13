@@ -1163,6 +1163,27 @@ export function ChatView({ conversation, onConversationUpdate }: ChatViewProps) 
         />
       </div>
 
+      {/* Banner: conversa não atribuída a mim */}
+      {userProfile.isLoaded && conversation.assigned_user_id !== userProfile.id && (
+        <div className="w-full px-4 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-3" style={{ flexShrink: 0 }}>
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <p className="text-xs text-amber-800">
+              {conversation.assigned_user_id
+                ? <><strong>Conversa atribuída a {currentAssignedUser?.nome || 'outro atendente'}</strong> — atribua a você para continuar o atendimento.</>
+                : <><strong>Conversa sem atendente atribuído</strong> — atribua a você para iniciar o atendimento.</>
+              }
+            </p>
+          </div>
+          <button
+            onClick={() => handleAssign(userProfile.id!)}
+            className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-[#0023D5] text-white rounded-lg hover:bg-[#001AAA] transition-colors"
+          >
+            Atribuir a mim
+          </button>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 bg-[#F9FAFB] relative w-full" style={{ minHeight: 0, overflow: 'auto' }}>
         <div className="absolute inset-0 opacity-[0.03]" style={{
