@@ -1216,153 +1216,177 @@ export function ChatView({ conversation, onConversationUpdate }: ChatViewProps) 
       </div>
 
       {/* Composer */}
-      <div className="w-full border-t border-[#E5E7EB] bg-white overflow-hidden" style={{ flexShrink: 0 }}>
-        {!isWithinWindow && (
-          <div className="mx-4 mt-3 px-4 py-3 rounded-lg border-l-[3px]" style={{ backgroundColor: '#FEF3C7', borderLeftColor: '#F59E0B' }}>
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#92400E' }} />
-              <p className="text-xs" style={{ color: '#92400E' }}>
-                <strong>Fora da janela de 24h.</strong> Envie um template aprovado.
-              </p>
-            </div>
-          </div>
-        )}
+      {(() => {
+        const isNotAssignedToMe = userProfile.isLoaded && conversation.assigned_user_id !== userProfile.id;
 
-        {isWithinWindow && hoursRemaining !== null && hoursRemaining < 2 && (
-          <div className="mx-4 mt-3 px-4 py-3 rounded-lg border-l-[3px]" style={{ backgroundColor: '#FEF3C7', borderLeftColor: '#F59E0B' }}>
-            <div className="flex items-center gap-2">
-              <Clock className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#92400E' }} />
-              <p className="text-xs" style={{ color: '#92400E' }}>
-                Janela expira em {Math.floor(hoursRemaining * 60)} minutos.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Barra de Ferramentas / Action Buttons */}
-        <div className="w-full px-4 md:px-6 pt-3 pb-2 border-b border-[#F3F3F3]">
-          <TooltipProvider delayDuration={200}>
-            <div className="flex items-center gap-1 w-full overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-              {/* Botão Emoji */}
-              <div className="relative" ref={emojiPickerRef}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 md:h-9 md:w-9 text-[#9CA3AF] hover:text-[#0023D5] hover:bg-[#E6EAFF] transition-all duration-150"
-                    >
-                      <Smile className="w-4 h-4 md:w-5 md:h-5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="bg-[#1B1B1B] text-white border-[#1B1B1B] px-3 py-1.5 text-xs font-medium shadow-lg">
-                    Emojis
-                  </TooltipContent>
-                </Tooltip>
-                
-                {/* Emoji Picker Popup */}
-                {showEmojiPicker && (
-                  <div className="absolute bottom-full left-0 mb-2 z-50 shadow-xl rounded-lg">
-                    <EmojiPicker 
-                      onEmojiClick={handleEmojiClick}
-                      width={280}
-                      height={350}
-                      searchPlaceHolder="Buscar emoji..."
-                      previewConfig={{ showPreview: false }}
-                    />
-                  </div>
-                )}
+        if (isNotAssignedToMe) {
+          // Composer bloqueado — atendente precisa atribuir a conversa
+          return (
+            <div className="w-full border-t border-[#E5E7EB] bg-slate-50 overflow-hidden" style={{ flexShrink: 0 }}>
+              <div className="flex items-center justify-center gap-3 px-6 py-5">
+                <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                <p className="text-sm text-slate-500">Atribua esta conversa a você para enviar mensagens</p>
+                <button
+                  onClick={() => handleAssign(userProfile.id!)}
+                  className="flex-shrink-0 px-4 py-2 text-xs font-medium bg-[#0023D5] text-white rounded-lg hover:bg-[#001AAA] transition-colors"
+                >
+                  Atribuir a mim
+                </button>
               </div>
-
-              {/* Botão Enviar Template */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={() => setShowTemplateSelector(true)}
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 md:h-9 md:w-9 text-[#9CA3AF] hover:text-[#0023D5] hover:bg-[#E6EAFF] transition-all duration-150"
-                  >
-                    <FileText className="w-4 h-4 md:w-5 md:h-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="bg-[#1B1B1B] text-white border-[#1B1B1B] px-3 py-1.5 text-xs font-medium shadow-lg">
-                  Modelos de mensagens
-                </TooltipContent>
-              </Tooltip>
-
-              {/* Botão Enviar Imagem */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={() => handleFileSelect('image')}
-                    variant="ghost"
-                    size="icon"
-                    disabled={uploadingFile}
-                    className="h-8 w-8 md:h-9 md:w-9 text-[#9CA3AF] hover:text-[#0023D5] hover:bg-[#E6EAFF] transition-all duration-150 disabled:opacity-40"
-                  >
-                    <ImageIcon className="w-4 h-4 md:w-5 md:h-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="bg-[#1B1B1B] text-white border-[#1B1B1B] px-3 py-1.5 text-xs font-medium shadow-lg">
-                  Enviar imagem
-                </TooltipContent>
-              </Tooltip>
-
-              {/* Botão Enviar Arquivo */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={() => handleFileSelect('document')}
-                    variant="ghost"
-                    size="icon"
-                    disabled={uploadingFile}
-                    className="h-8 w-8 md:h-9 md:w-9 text-[#9CA3AF] hover:text-[#0023D5] hover:bg-[#E6EAFF] transition-all duration-150 disabled:opacity-40"
-                  >
-                    <Paperclip className="w-4 h-4 md:w-5 md:h-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="bg-[#1B1B1B] text-white border-[#1B1B1B] px-3 py-1.5 text-xs font-medium shadow-lg">
-                  Enviar arquivo
-                </TooltipContent>
-              </Tooltip>
             </div>
-          </TooltipProvider>
-        </div>
+          );
+        }
 
-        {/* Campo de Mensagem */}
-        <div className="w-full px-4 md:px-6 pb-4 pt-3">
-          <div className="flex gap-2 w-full items-end">
-            <Textarea
-              value={messageText}
-              onChange={(e) => setMessageText(e.target.value)}
-              placeholder={isWithinWindow ? "Digite sua mensagem..." : "Janela de 24h expirada"}
-              disabled={!isWithinWindow || sending}
-              className="resize-none bg-[#F3F3F3] border-[#E5E7EB] focus:border-[#0023D5] focus:ring-[#0023D5]/10 text-[14px] text-[#1B1B1B] placeholder:text-[#9CA3AF] rounded-3xl flex-1 min-w-0 px-4 py-2.5"
-              rows={2}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage();
-                }
-              }}
-            />
-            <Button
-              onClick={handleSendMessage}
-              disabled={!messageText.trim() || !isWithinWindow || sending}
-              size="icon"
-              className="rounded-full w-10 h-10 flex-shrink-0 disabled:opacity-50 transition-all duration-150"
-              style={{ 
-                backgroundColor: '#0023D5',
-                boxShadow: '0 2px 4px rgba(0,35,213,0.2)',
-              }}
-            >
-              <Send className="w-4 h-4 md:w-5 md:h-5 text-white" />
-            </Button>
+        return (
+          <div className="w-full border-t border-[#E5E7EB] bg-white overflow-hidden" style={{ flexShrink: 0 }}>
+            {!isWithinWindow && (
+              <div className="mx-4 mt-3 px-4 py-3 rounded-lg border-l-[3px]" style={{ backgroundColor: '#FEF3C7', borderLeftColor: '#F59E0B' }}>
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#92400E' }} />
+                  <p className="text-xs" style={{ color: '#92400E' }}>
+                    <strong>Fora da janela de 24h.</strong> Envie um template aprovado.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {isWithinWindow && hoursRemaining !== null && hoursRemaining < 2 && (
+              <div className="mx-4 mt-3 px-4 py-3 rounded-lg border-l-[3px]" style={{ backgroundColor: '#FEF3C7', borderLeftColor: '#F59E0B' }}>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#92400E' }} />
+                  <p className="text-xs" style={{ color: '#92400E' }}>
+                    Janela expira em {Math.floor(hoursRemaining * 60)} minutos.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Barra de Ferramentas / Action Buttons */}
+            <div className="w-full px-4 md:px-6 pt-3 pb-2 border-b border-[#F3F3F3]">
+              <TooltipProvider delayDuration={200}>
+                <div className="flex items-center gap-1 w-full overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                  {/* Botão Emoji */}
+                  <div className="relative" ref={emojiPickerRef}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 md:h-9 md:w-9 text-[#9CA3AF] hover:text-[#0023D5] hover:bg-[#E6EAFF] transition-all duration-150"
+                        >
+                          <Smile className="w-4 h-4 md:w-5 md:h-5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="bg-[#1B1B1B] text-white border-[#1B1B1B] px-3 py-1.5 text-xs font-medium shadow-lg">
+                        Emojis
+                      </TooltipContent>
+                    </Tooltip>
+
+                    {/* Emoji Picker Popup */}
+                    {showEmojiPicker && (
+                      <div className="absolute bottom-full left-0 mb-2 z-50 shadow-xl rounded-lg">
+                        <EmojiPicker
+                          onEmojiClick={handleEmojiClick}
+                          width={280}
+                          height={350}
+                          searchPlaceHolder="Buscar emoji..."
+                          previewConfig={{ showPreview: false }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Botão Enviar Template */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={() => setShowTemplateSelector(true)}
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 md:h-9 md:w-9 text-[#9CA3AF] hover:text-[#0023D5] hover:bg-[#E6EAFF] transition-all duration-150"
+                      >
+                        <FileText className="w-4 h-4 md:w-5 md:h-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="bg-[#1B1B1B] text-white border-[#1B1B1B] px-3 py-1.5 text-xs font-medium shadow-lg">
+                      Modelos de mensagens
+                    </TooltipContent>
+                  </Tooltip>
+
+                  {/* Botão Enviar Imagem */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={() => handleFileSelect('image')}
+                        variant="ghost"
+                        size="icon"
+                        disabled={uploadingFile}
+                        className="h-8 w-8 md:h-9 md:w-9 text-[#9CA3AF] hover:text-[#0023D5] hover:bg-[#E6EAFF] transition-all duration-150 disabled:opacity-40"
+                      >
+                        <ImageIcon className="w-4 h-4 md:w-5 md:h-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="bg-[#1B1B1B] text-white border-[#1B1B1B] px-3 py-1.5 text-xs font-medium shadow-lg">
+                      Enviar imagem
+                    </TooltipContent>
+                  </Tooltip>
+
+                  {/* Botão Enviar Arquivo */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={() => handleFileSelect('document')}
+                        variant="ghost"
+                        size="icon"
+                        disabled={uploadingFile}
+                        className="h-8 w-8 md:h-9 md:w-9 text-[#9CA3AF] hover:text-[#0023D5] hover:bg-[#E6EAFF] transition-all duration-150 disabled:opacity-40"
+                      >
+                        <Paperclip className="w-4 h-4 md:w-5 md:h-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="bg-[#1B1B1B] text-white border-[#1B1B1B] px-3 py-1.5 text-xs font-medium shadow-lg">
+                      Enviar arquivo
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
+            </div>
+
+            {/* Campo de Mensagem */}
+            <div className="w-full px-4 md:px-6 pb-4 pt-3">
+              <div className="flex gap-2 w-full items-end">
+                <Textarea
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  placeholder={isWithinWindow ? "Digite sua mensagem..." : "Janela de 24h expirada"}
+                  disabled={!isWithinWindow || sending}
+                  className="resize-none bg-[#F3F3F3] border-[#E5E7EB] focus:border-[#0023D5] focus:ring-[#0023D5]/10 text-[14px] text-[#1B1B1B] placeholder:text-[#9CA3AF] rounded-3xl flex-1 min-w-0 px-4 py-2.5"
+                  rows={2}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                />
+                <Button
+                  onClick={handleSendMessage}
+                  disabled={!messageText.trim() || !isWithinWindow || sending}
+                  size="icon"
+                  className="rounded-full w-10 h-10 flex-shrink-0 disabled:opacity-50 transition-all duration-150"
+                  style={{
+                    backgroundColor: '#0023D5',
+                    boxShadow: '0 2px 4px rgba(0,35,213,0.2)',
+                  }}
+                >
+                  <Send className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {showTemplateSelector && (
         <TemplateSelector
