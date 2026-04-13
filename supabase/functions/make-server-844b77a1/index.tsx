@@ -1639,11 +1639,11 @@ app.get("/make-server-844b77a1/api/conversations", async (c) => {
       });
     }
 
-    if ((cargo === 'Supervisor' || cargo === 'Gerente') && !unidadeId) {
-      console.warn('⚠️ [CONVERSATIONS] Supervisor/Gerente sem unidade definida');
+    if (['Atendente', 'Supervisor', 'Gerente'].includes(cargo) && !unidadeId) {
+      console.warn('⚠️ [CONVERSATIONS] Usuário sem unidade definida');
       return c.json({
         success: false,
-        error: 'Usuário de gestão sem unidade definida'
+        error: 'Usuário sem unidade definida'
       }, 400);
     }
 
@@ -1655,11 +1655,9 @@ app.get("/make-server-844b77a1/api/conversations", async (c) => {
       }, 403);
     }
 
-    // Helper para aplicar filtros de cargo em qualquer query
+    // Helper: Atendente, Supervisor e Gerente veem todas as conversas da unidade
     function applyRoleFilter(query: any) {
-      if (cargo === 'Atendente') {
-        return query.eq('assigned_user_id', userId);
-      } else if (cargo === 'Supervisor' || cargo === 'Gerente') {
+      if (cargo === 'Atendente' || cargo === 'Supervisor' || cargo === 'Gerente') {
         return query.eq('unit_id', unidadeId);
       }
       return query; // Administrador: sem filtro
