@@ -2120,10 +2120,17 @@ app.get("/make-server-844b77a1/api/contacts", async (c) => {
         message: 'Usuário sem permissão de acesso aos contatos'
       });
     }
-    // 📌 REGRA 1: ATENDENTE - vê apenas contatos sob sua responsabilidade
+    // 📌 REGRA 1: ATENDENTE - vê todos os contatos da unidade
     else if (cargo === 'Atendente') {
-      console.log('🔒 [CONTACTS] Filtro ATENDENTE: id_profile_responsavel =', userId);
-      contactsQuery = contactsQuery.eq('id_profile_responsavel', userId);
+      if (!unidadeId) {
+        console.warn('⚠️ [CONTACTS] Atendente sem unidade definida');
+        return c.json({
+          success: false,
+          error: 'Atendente sem unidade definida'
+        }, 400);
+      }
+      console.log('🔒 [CONTACTS] Filtro ATENDENTE: unit_id =', unidadeId);
+      contactsQuery = contactsQuery.eq('unit_id', unidadeId);
     }
     // 📌 REGRA 2: SUPERVISOR/GERENTE - vê todos contatos da unidade
     else if (cargo === 'Supervisor' || cargo === 'Gerente') {

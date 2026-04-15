@@ -244,7 +244,7 @@ export function ConversationListV2({ onSelectConversation, selectedConversationI
 
       // Filtro por tag
       if (tagFilter !== 'all') {
-        const hasThatTag = conv.tags?.some((tag: Tag) => tag.id === tagFilter);
+        const hasThatTag = conv.tags?.some((tag: Tag) => String(tag.id) === String(tagFilter));
         if (!hasThatTag) return false;
       }
 
@@ -426,7 +426,7 @@ export function ConversationListV2({ onSelectConversation, selectedConversationI
             <SelectContent>
               <SelectItem value="all">Todas tags</SelectItem>
               {availableTags.map(tag => (
-                <SelectItem key={tag.id} value={tag.id}>
+                <SelectItem key={tag.id} value={String(tag.id)}>
                   <span className="flex items-center gap-1.5">
                     <span
                       className="w-2 h-2 rounded-full flex-shrink-0"
