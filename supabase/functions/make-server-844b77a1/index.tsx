@@ -1567,11 +1567,15 @@ app.post("/make-server-844b77a1/api/whatsapp/send-media", authMiddleware, async 
  * - Atendente: vê apenas conversas atribuídas a ele
  * - Supervisor/Gerente: vê todas as conversas da unidade dele
  * 🚀 PAGINAÇÃO: Suporta limit e offset via query params
+ * 🏷️ FILTRO POR TAG: Suporta tag_id via query param (server-side)
+ * 🔍 BUSCA: Suporta search via query param (busca em mensagens e contatos)
  */
 app.get("/make-server-844b77a1/api/conversations", async (c) => {
   const token = c.req.query('token');
   const limit = parseInt(c.req.query('limit') || '50', 10); // 🚀 Default: 50 conversas
   const offset = parseInt(c.req.query('offset') || '0', 10); // 🚀 Default: offset 0
+  const tagId = c.req.query('tag_id') || null; // 🏷️ Filtro por tag (server-side)
+  const search = c.req.query('search') || null; // 🔍 Busca por texto
 
   try {
     // 🔐 AUTENTICAÇÃO: Buscar usuário logado
@@ -1663,23 +1667,113 @@ app.get("/make-server-844b77a1/api/conversations", async (c) => {
       return query; // Administrador: sem filtro
     }
 
+    // 🏷️ FILTRO POR TAG (server-side): buscar IDs de conversas com a tag
+    let tagConversationIds: string[] | null = null;
+    if (tagId) {
+      const { data: tagConvs } = await supabaseAdmin
+        .from('conversation_tags')
+        .select('conversation_id')
+        .eq('tag_id', tagId);
+
+      tagConversationIds = tagConvs?.map(tc => tc.conversation_id) || [];
+
+      if (tagConversationIds.length === 0) {
+        console.log(`🏷️ [CONVERSATIONS] Nenhuma conversa com tag_id=${tagId}`);
+        return c.json({
+          success: true,
+          conversations: [],
+          total: 0,
+          limit,
+          offset,
+          hasMore: false
+        });
+      }
+    }
+
+    // 🔍 BUSCA POR TEXTO: buscar IDs de conversas que contêm o termo
+    let searchConversationIds: string[] | null = null;
+    if (search && search.trim().length >= 2) {
+      const searchTerm = `%${search.trim()}%`;
+
+      // Buscar em mensagens (body)
+      const { data: messageMatches } = await supabaseAdmin
+        .from('messages')
+        .select('conversation_id')
+        .ilike('body', searchTerm);
+
+      // Buscar em contatos (display_name, first_name, last_name, phone_number, wa_id)
+      const { data: contactMatches } = await supabaseAdmin
+        .from('contacts')
+        .select('id')
+        .or(`display_name.ilike.${searchTerm},first_name.ilike.${searchTerm},last_name.ilike.${searchTerm},phone_number.ilike.${searchTerm},wa_id.ilike.${searchTerm}`);
+
+      const messageConvIds = new Set(messageMatches?.map(m => m.conversation_id) || []);
+
+      // Buscar conversas dos contatos encontrados
+      if (contactMatches && contactMatches.length > 0) {
+        const contactIds = contactMatches.map(c => c.id);
+        const { data: contactConvs } = await supabaseAdmin
+          .from('conversations')
+          .select('id')
+          .in('contact_id', contactIds);
+
+        contactConvs?.forEach(cc => messageConvIds.add(cc.id));
+      }
+
+      searchConversationIds = Array.from(messageConvIds);
+
+      if (searchConversationIds.length === 0) {
+        console.log(`🔍 [CONVERSATIONS] Nenhuma conversa encontrada para search="${search}"`);
+        return c.json({
+          success: true,
+          conversations: [],
+          total: 0,
+          limit,
+          offset,
+          hasMore: false
+        });
+      }
+    }
+
+    // Combinar filtros de tag e search (interseção)
+    let filteredIds: string[] | null = null;
+    if (tagConversationIds && searchConversationIds) {
+      const tagSet = new Set(tagConversationIds);
+      filteredIds = searchConversationIds.filter(id => tagSet.has(id));
+      if (filteredIds.length === 0) {
+        return c.json({ success: true, conversations: [], total: 0, limit, offset, hasMore: false });
+      }
+    } else if (tagConversationIds) {
+      filteredIds = tagConversationIds;
+    } else if (searchConversationIds) {
+      filteredIds = searchConversationIds;
+    }
+
+    // Helper: aplicar filtro de IDs (tag + search)
+    function applyIdFilter(query: any) {
+      if (filteredIds) {
+        return query.in('id', filteredIds);
+      }
+      return query;
+    }
+
     // 🚀 QUERY 1: Contar total (query independente)
-    const countQuery = applyRoleFilter(
+    const countQuery = applyIdFilter(applyRoleFilter(
       supabaseAdmin.from('conversations').select('*', { count: 'exact', head: true })
-    );
+    ));
     const { count: totalCount } = await countQuery;
 
-    console.log(`📊 [CONVERSATIONS] Total disponível: ${totalCount}, Limit: ${limit}, Offset: ${offset}`);
+    console.log(`📊 [CONVERSATIONS] Total disponível: ${totalCount}, Limit: ${limit}, Offset: ${offset}${tagId ? `, Tag: ${tagId}` : ''}${search ? `, Search: "${search}"` : ''}`);
 
     // 🚀 QUERY 2: Buscar dados paginados (query independente)
-    const dataQuery = applyRoleFilter(
+    const dataQuery = applyIdFilter(applyRoleFilter(
       supabaseAdmin.from('conversations').select(`
         *,
         contact:contacts(*),
         assigned_user:profiles(*),
         unit:units(*)
       `)
-    )
+    ))
       .order('last_message_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -1695,61 +1789,96 @@ app.get("/make-server-844b77a1/api/conversations", async (c) => {
 
     // Filtrar conversas sem contato (proteção)
     const validConversations = conversations?.filter(conv => conv.contact) || [];
-    
+
     if (validConversations.length !== conversations?.length) {
       const orphanCount = (conversations?.length || 0) - validConversations.length;
       console.warn(`⚠️ ${orphanCount} conversa(s) órfãs ignoradas`);
     }
 
-    // 🔥 OTIMIZAÇÃO: Calcular preview e pendências de mensagens para cada conversa
-    const conversationsWithMetadata = await Promise.all(
-      validConversations.map(async (conv) => {
-        // Buscar última mensagem para preview
-        const { data: lastMessage } = await supabaseAdmin
-          .from('messages')
-          .select('body, type, direction, sent_at')
-          .eq('conversation_id', conv.id)
-          .order('sent_at', { ascending: false })
-          .limit(1)
-          .single();
+    // 🔥 OTIMIZAÇÃO: Batch queries em vez de N+1
+    const convIds = validConversations.map(conv => conv.id);
 
-        // Contar mensagens pendentes (inbound consecutivas desde última outbound)
-        const { data: recentMessages } = await supabaseAdmin
-          .from('messages')
-          .select('direction')
-          .eq('conversation_id', conv.id)
-          .order('sent_at', { ascending: false })
-          .limit(20);
+    // Batch: última mensagem de cada conversa (1 query em vez de 50)
+    let lastMessagesByConvId: Record<string, any> = {};
+    if (convIds.length > 0) {
+      const { data: allLastMessages } = await supabaseAdmin.rpc('get_last_messages_batch', {
+        conv_ids: convIds
+      }).catch(() => ({ data: null }));
 
-        let pendingCount = 0;
-        if (recentMessages) {
-          for (const msg of recentMessages) {
-            if (msg.direction === 'inbound') {
-              pendingCount++;
-            } else if (msg.direction === 'outbound') {
-              break;
+      // Fallback: se a RPC não existir, usar query manual otimizada
+      if (!allLastMessages) {
+        const { data: messagesData } = await supabaseAdmin
+          .from('messages')
+          .select('conversation_id, body, type, direction, sent_at')
+          .in('conversation_id', convIds)
+          .order('sent_at', { ascending: false });
+
+        if (messagesData) {
+          // Pegar apenas a primeira (mais recente) de cada conversa
+          for (const msg of messagesData) {
+            if (!lastMessagesByConvId[msg.conversation_id]) {
+              lastMessagesByConvId[msg.conversation_id] = msg;
             }
           }
         }
+      } else {
+        for (const msg of allLastMessages) {
+          lastMessagesByConvId[msg.conversation_id] = msg;
+        }
+      }
+    }
 
-        return {
-          ...conv,
-          last_message_preview: lastMessage?.body || 'Sem mensagens',
-          last_message_type: lastMessage?.type || 'text',
-          pending_messages_count: pendingCount
-        };
-      })
-    );
+    // Batch: mensagens recentes para contagem de pendentes (1 query em vez de 50)
+    let pendingCountByConvId: Record<string, number> = {};
+    if (convIds.length > 0) {
+      const { data: recentMsgs } = await supabaseAdmin
+        .from('messages')
+        .select('conversation_id, direction, sent_at')
+        .in('conversation_id', convIds)
+        .order('sent_at', { ascending: false })
+        .limit(convIds.length * 20); // 20 mensagens por conversa (máximo)
+
+      if (recentMsgs) {
+        // Agrupar por conversa e calcular pendentes
+        const msgsByConv: Record<string, { direction: string }[]> = {};
+        for (const msg of recentMsgs) {
+          if (!msgsByConv[msg.conversation_id]) msgsByConv[msg.conversation_id] = [];
+          if (msgsByConv[msg.conversation_id].length < 20) {
+            msgsByConv[msg.conversation_id].push(msg);
+          }
+        }
+
+        for (const [convId, msgs] of Object.entries(msgsByConv)) {
+          let count = 0;
+          for (const msg of msgs) {
+            if (msg.direction === 'inbound') count++;
+            else if (msg.direction === 'outbound') break;
+          }
+          pendingCountByConvId[convId] = count;
+        }
+      }
+    }
+
+    // Montar resultado final com metadata
+    const conversationsWithMetadata = validConversations.map(conv => {
+      const lastMessage = lastMessagesByConvId[conv.id];
+      return {
+        ...conv,
+        last_message_preview: lastMessage?.body || 'Sem mensagens',
+        last_message_type: lastMessage?.type || 'text',
+        pending_messages_count: pendingCountByConvId[conv.id] || 0
+      };
+    });
 
     console.log(`✅ [CONVERSATIONS] Retornando ${conversationsWithMetadata.length} conversas (de ${totalCount} total) para ${cargo}`);
 
     return c.json({
       success: true,
       conversations: conversationsWithMetadata,
-      total: totalCount || 0, // 🚀 Total de conversas disponíveis (para paginação)
+      total: totalCount || 0,
       limit: limit,
       offset: offset,
-      hasMore: (offset + conversationsWithMetadata.length) < (totalCount || 0) // 🚀 Indica se há mais conversas
+      hasMore: (offset + conversationsWithMetadata.length) < (totalCount || 0)
     });
 
   } catch (error) {

@@ -1,11 +1,11 @@
 /**
  * 🚀 HOOK: useConversations
- * 
+ *
  * Hook customizado para gerenciar conversas com React Query:
  * - Scroll infinito otimizado
  * - Cache inteligente
  * - Invalidação via Realtime
- * - Performance 10x melhor
+ * - Filtros server-side (tag, busca)
  */
 
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
@@ -34,6 +34,8 @@ const CONVERSATIONS_PER_PAGE = 50;
 
 interface UseConversationsOptions {
   enabled?: boolean;
+  tagId?: string | null;
+  search?: string | null;
 }
 
 interface ConversationsPage {
@@ -44,13 +46,29 @@ interface ConversationsPage {
 }
 
 /**
- * Fetch de conversas com paginação
+ * Fetch de conversas com paginação e filtros server-side
  */
-async function fetchConversations({ pageParam = 0 }): Promise<ConversationsPage> {
+async function fetchConversations(
+  { pageParam = 0 },
+  filters: { tagId?: string | null; search?: string | null }
+): Promise<ConversationsPage> {
   const limit = CONVERSATIONS_PER_PAGE;
   const offset = pageParam;
-  
-  const endpoint = `${API_BASE}/api/conversations?limit=${limit}&offset=${offset}`;
+
+  // Construir URL com filtros server-side
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  if (filters.tagId) {
+    params.set('tag_id', filters.tagId);
+  }
+  if (filters.search && filters.search.trim().length >= 2) {
+    params.set('search', filters.search.trim());
+  }
+
+  const endpoint = `${API_BASE}/api/conversations?${params.toString()}`;
   const response = await authFetch(endpoint, { method: 'GET' });
 
   if (!response.ok) {
@@ -59,23 +77,23 @@ async function fetchConversations({ pageParam = 0 }): Promise<ConversationsPage>
   }
 
   const result = await response.json();
-  
+
   if (!result.success) {
     throw new Error(result.error || 'Erro ao carregar conversas');
   }
-  
+
   // 🚀 OTIMIZAÇÃO: Buscar tags de TODAS as conversas de uma vez (batch query)
   const conversations = result.conversations || [];
   const conversationIds = conversations.map((c: any) => c.id);
-  
+
   let tagsByConvId: Record<string, any[]> = {};
-  
+
   if (conversationIds.length > 0) {
     const { data: allTags } = await supabase
       .from('conversation_tags')
       .select('conversation_id, tag:tags(*)')
       .in('conversation_id', conversationIds);
-    
+
     // Agrupar tags por conversation_id
     if (allTags) {
       tagsByConvId = allTags.reduce((acc: Record<string, any[]>, ct: any) => {
@@ -85,13 +103,13 @@ async function fetchConversations({ pageParam = 0 }): Promise<ConversationsPage>
       }, {});
     }
   }
-  
+
   // Mapear conversas com suas tags
   const conversationsWithTags = conversations.map((conv: any) => ({
     ...conv,
     tags: tagsByConvId[conv.id] || []
   }));
-  
+
   return {
     conversations: conversationsWithTags,
     total: result.total || 0,
@@ -105,12 +123,15 @@ async function fetchConversations({ pageParam = 0 }): Promise<ConversationsPage>
  */
 export function useConversations(options: UseConversationsOptions = {}) {
   const queryClient = useQueryClient();
-  const { enabled = true } = options;
-  
+  const { enabled = true, tagId = null, search = null } = options;
+
+  // Filtros para a query key (para cache separado por filtro)
+  const filters = { tagId, search };
+
   // 🚀 useInfiniteQuery - Perfeito para scroll infinito!
   const query = useInfiniteQuery({
-    queryKey: queryKeys.conversations.infinite({}),
-    queryFn: fetchConversations,
+    queryKey: queryKeys.conversations.infinite(filters),
+    queryFn: (ctx) => fetchConversations(ctx, filters),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => {
       // Se não houver mais conversas, retorna undefined (para de paginar)
@@ -122,7 +143,7 @@ export function useConversations(options: UseConversationsOptions = {}) {
     // Manter dados anteriores enquanto carrega novos (evita flicker)
     placeholderData: (previousData) => previousData,
   });
-  
+
   const debouncedInvalidate = useDebouncedInvalidation(queryClient);
 
   // Realtime: invalidar cache (debounced) quando houver mudanças
@@ -163,27 +184,27 @@ export function useConversations(options: UseConversationsOptions = {}) {
       supabase.removeChannel(tagsChannel);
     };
   }, [enabled, queryClient, debouncedInvalidate]);
-  
+
   const refresh = useCallback(() => {
     return queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all });
   }, [queryClient]);
-  
+
   // Combinar todas as páginas em uma lista única
   const conversations = query.data?.pages.flatMap(page => page.conversations) || [];
   const total = query.data?.pages[0]?.total || 0;
-  
+
   return {
     // Dados
     conversations,
     total,
-    
+
     // Estados
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     isFetchingNextPage: query.isFetchingNextPage,
     hasNextPage: query.hasNextPage,
     error: query.error,
-    
+
     // Ações
     fetchNextPage: query.fetchNextPage,
     refresh,

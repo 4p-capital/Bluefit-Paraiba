@@ -113,7 +113,24 @@ function ConversationSkeleton() {
 }
 
 export function ConversationListV2({ onSelectConversation, selectedConversationId, refreshTrigger }: ConversationListProps) {
-  // 🚀 React Query - Hook customizado com scroll infinito
+  // Filtros
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<ConversationStatus | 'all'>('all');
+  const [agentFilter, setAgentFilter] = useState<string>('all');
+  const [tagFilter, setTagFilter] = useState<string>('all');
+  const [situationFilter, setSituationFilter] = useState<string>('all');
+  const [unitAgents, setUnitAgents] = useState<{ id: string; nome: string; sobrenome: string }[]>([]);
+
+  // 🔍 Debounce da busca para não disparar a cada tecla
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // 🚀 React Query - Hook com filtros server-side (tag + busca)
   const {
     conversations,
     total,
@@ -123,15 +140,10 @@ export function ConversationListV2({ onSelectConversation, selectedConversationI
     hasNextPage,
     fetchNextPage,
     refresh,
-  } = useConversations();
-
-  // Filtros
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ConversationStatus | 'all'>('all');
-  const [agentFilter, setAgentFilter] = useState<string>('all');
-  const [tagFilter, setTagFilter] = useState<string>('all');
-  const [situationFilter, setSituationFilter] = useState<string>('all');
-  const [unitAgents, setUnitAgents] = useState<{ id: string; nome: string; sobrenome: string }[]>([]);
+  } = useConversations({
+    tagId: tagFilter !== 'all' ? tagFilter : null,
+    search: debouncedSearch || null,
+  });
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
 
   // Perfil do usuário
@@ -225,15 +237,15 @@ export function ConversationListV2({ onSelectConversation, selectedConversationI
     return () => scrollViewport.removeEventListener('scroll', handleScroll);
   }, [scrollViewport, handleScroll]);
 
-  // Filtrar conversas
+  // Filtrar conversas (tag e busca deep são server-side, aqui filtros client-side + busca local para feedback imediato)
   const filteredConversations = useMemo(() => {
     const filtered = conversations.filter(conv => {
       if (!conv.contact) return false;
 
-      // Filtro por status
+      // Filtro por status (client-side)
       if (statusFilter !== 'all' && conv.status !== statusFilter) return false;
 
-      // Filtro por atendente
+      // Filtro por atendente (client-side)
       if (agentFilter !== 'all') {
         if (agentFilter === '__unassigned__') {
           if (conv.assigned_user_id) return false;
@@ -242,21 +254,23 @@ export function ConversationListV2({ onSelectConversation, selectedConversationI
         }
       }
 
-      // Filtro por tag
+      // Filtro por situação do contato (client-side)
+      if (situationFilter !== 'all') {
+        if ((conv.contact?.situation || 'lead') !== situationFilter) return false;
+      }
+
+      // 🏷️ Filtro por tag (client-side fallback + reforço do server-side)
       if (tagFilter !== 'all') {
         const hasThatTag = conv.tags?.some((tag: Tag) => String(tag.id) === String(tagFilter));
         if (!hasThatTag) return false;
       }
 
-      // Filtro por situação do contato
-      if (situationFilter !== 'all') {
-        if ((conv.contact?.situation || 'lead') !== situationFilter) return false;
-      }
-
-      // Filtro por busca
+      // 🔍 Busca client-side (feedback imediato sobre conversas já carregadas)
+      // O server-side traz resultados completos (incluindo mensagens antigas),
+      // mas este filtro local garante resposta visual instantânea enquanto o server processa.
       if (searchTerm) {
         const search = searchTerm.toLowerCase();
-        const fullName = conv.contact?.first_name && conv.contact?.last_name 
+        const fullName = conv.contact?.first_name && conv.contact?.last_name
           ? `${conv.contact.first_name} ${conv.contact.last_name}`.toLowerCase()
           : '';
         const matchesName = conv.contact?.display_name?.toLowerCase().includes(search);
@@ -264,9 +278,10 @@ export function ConversationListV2({ onSelectConversation, selectedConversationI
         const matchesPhone = conv.contact?.wa_id?.includes(search) || conv.contact?.phone_number?.includes(search);
         const matchesMessage = conv.last_message_preview?.toLowerCase().includes(search) ||
           formatMessagePreview(conv.last_message_preview, conv.last_message_type)?.toLowerCase().includes(search);
-        
+
         return matchesName || matchesFullName || matchesPhone || matchesMessage;
       }
+
       return true;
     });
 

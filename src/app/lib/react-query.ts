@@ -15,7 +15,7 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       // ⏱️ Quanto tempo os dados ficam "fresh" (sem refetch automático)
-      staleTime: 30 * 1000, // 30 segundos
+      staleTime: 60 * 1000, // 60 segundos (reduz refetches desnecessários)
       
       // 🗑️ Quanto tempo manter dados em cache após ficarem "unused"
       gcTime: 5 * 60 * 1000, // 5 minutos (antes era "cacheTime")

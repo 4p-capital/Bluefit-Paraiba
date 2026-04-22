@@ -59,18 +59,26 @@ export function ConversationsModule() {
 
       const tags = tagsData?.map((ct: any) => ct.tag).filter(Boolean) || [];
 
-      // Carregar mensagens pendentes
-      const { count } = await supabase
+      // Carregar mensagens pendentes (inbound consecutivas desde última outbound)
+      const { data: recentMessages } = await supabase
         .from('messages')
-        .select('*', { count: 'exact', head: true })
+        .select('direction')
         .eq('conversation_id', id)
-        .eq('direction', 'inbound')
-        .eq('is_read', false);
+        .order('sent_at', { ascending: false })
+        .limit(20);
+
+      let pendingCount = 0;
+      if (recentMessages) {
+        for (const msg of recentMessages) {
+          if (msg.direction === 'inbound') pendingCount++;
+          else if (msg.direction === 'outbound') break;
+        }
+      }
 
       const conversation: ConversationWithDetails = {
         ...convData,
         tags,
-        pending_messages_count: count || 0,
+        pending_messages_count: pendingCount,
       };
 
       setSelectedConversation(conversation);
@@ -123,17 +131,26 @@ export function ConversationsModule() {
 
       const tags = tagsData?.map((ct: any) => ct.tag).filter(Boolean) || [];
 
-      const { count } = await supabase
+      // Carregar mensagens pendentes (inbound consecutivas desde última outbound)
+      const { data: recentMessages } = await supabase
         .from('messages')
-        .select('*', { count: 'exact', head: true })
+        .select('direction')
         .eq('conversation_id', selectedConversation.id)
-        .eq('direction', 'inbound')
-        .eq('is_read', false);
+        .order('sent_at', { ascending: false })
+        .limit(20);
+
+      let pendingCount = 0;
+      if (recentMessages) {
+        for (const msg of recentMessages) {
+          if (msg.direction === 'inbound') pendingCount++;
+          else if (msg.direction === 'outbound') break;
+        }
+      }
 
       const updatedConversation: ConversationWithDetails = {
         ...convData,
         tags,
-        pending_messages_count: count || 0,
+        pending_messages_count: pendingCount,
       };
 
       console.log('🔄 Conversa selecionada recarregada com', tags.length, 'tags');

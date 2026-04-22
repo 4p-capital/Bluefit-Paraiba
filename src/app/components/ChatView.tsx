@@ -269,13 +269,13 @@ export function ChatView({ conversation, onConversationUpdate }: ChatViewProps) 
       .eq('direction', 'inbound')
       .order('sent_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (data) {
       const lastInbound = new Date(data.sent_at);
       const now = new Date();
       const hoursDiff = (now.getTime() - lastInbound.getTime()) / (1000 * 60 * 60);
-      
+
       setIsWithinWindow(hoursDiff < 24);
       setHoursRemaining(hoursDiff < 24 ? 24 - hoursDiff : null);
     } else {
