@@ -5,7 +5,8 @@
  * - Scroll infinito otimizado
  * - Cache inteligente
  * - Invalidação via Realtime
- * - Filtros server-side (tag, busca)
+ * - Filtro por tag direto no banco (Supabase)
+ * - Busca full-text direto no banco (Supabase)
  */
 
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
@@ -46,29 +47,185 @@ interface ConversationsPage {
 }
 
 /**
- * Fetch de conversas com paginação e filtros server-side
+ * Busca tags em batch para uma lista de conversas
  */
-async function fetchConversations(
+async function fetchTagsBatch(conversationIds: number[]): Promise<Record<number, any[]>> {
+  if (conversationIds.length === 0) return {};
+
+  const { data: allTags } = await supabase
+    .from('conversation_tags')
+    .select('conversation_id, tag:tags(*)')
+    .in('conversation_id', conversationIds);
+
+  const tagsByConvId: Record<number, any[]> = {};
+  if (allTags) {
+    for (const ct of allTags) {
+      if (!tagsByConvId[ct.conversation_id]) tagsByConvId[ct.conversation_id] = [];
+      if ((ct as any).tag) tagsByConvId[ct.conversation_id].push((ct as any).tag);
+    }
+  }
+  return tagsByConvId;
+}
+
+/**
+ * 🏷️ Fetch de conversas filtradas por TAG - direto no Supabase
+ * Busca conversation_tags → conversations com paginação
+ */
+async function fetchConversationsByTag(
   { pageParam = 0 },
-  filters: { tagId?: string | null; search?: string | null }
+  tagId: string
 ): Promise<ConversationsPage> {
   const limit = CONVERSATIONS_PER_PAGE;
   const offset = pageParam;
 
-  // Construir URL com filtros server-side
-  const params = new URLSearchParams({
-    limit: String(limit),
-    offset: String(offset),
-  });
+  // 1. Buscar TODOS os IDs de conversas com essa tag
+  const { data: taggedConvs, error: tagError } = await supabase
+    .from('conversation_tags')
+    .select('conversation_id')
+    .eq('tag_id', tagId);
 
-  if (filters.tagId) {
-    params.set('tag_id', filters.tagId);
-  }
-  if (filters.search && filters.search.trim().length >= 2) {
-    params.set('search', filters.search.trim());
+  if (tagError || !taggedConvs) {
+    return { conversations: [], total: 0, hasMore: false, offset: 0 };
   }
 
-  const endpoint = `${API_BASE}/api/conversations?${params.toString()}`;
+  const taggedIds = taggedConvs.map(tc => tc.conversation_id);
+  const totalCount = taggedIds.length;
+
+  if (taggedIds.length === 0) {
+    return { conversations: [], total: 0, hasMore: false, offset: 0 };
+  }
+
+  // 2. Buscar conversas paginadas com esses IDs
+  const { data: conversations, error: convError } = await supabase
+    .from('conversations')
+    .select(`
+      *,
+      contact:contacts(*),
+      assigned_user:profiles(*),
+      unit:units(*)
+    `)
+    .in('id', taggedIds)
+    .order('last_message_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (convError || !conversations) {
+    return { conversations: [], total: totalCount, hasMore: false, offset: 0 };
+  }
+
+  // 3. Buscar tags em batch
+  const convIds = conversations.map(c => c.id);
+  const tagsByConvId = await fetchTagsBatch(convIds);
+
+  // 4. Montar conversas com tags e preview
+  const conversationsWithDetails = conversations
+    .filter(conv => conv.contact)
+    .map(conv => ({
+      ...conv,
+      tags: tagsByConvId[conv.id] || [],
+      last_message_preview: conv.last_message_preview || 'Sem mensagens',
+      pending_messages_count: 0,
+    }));
+
+  return {
+    conversations: conversationsWithDetails as ConversationWithDetails[],
+    total: totalCount,
+    hasMore: (offset + conversationsWithDetails.length) < totalCount,
+    offset: offset + conversationsWithDetails.length,
+  };
+}
+
+/**
+ * 🔍 Fetch de conversas por BUSCA - direto no Supabase
+ * Busca em messages.body + contacts
+ */
+async function fetchConversationsBySearch(
+  { pageParam = 0 },
+  searchTerm: string
+): Promise<ConversationsPage> {
+  const limit = CONVERSATIONS_PER_PAGE;
+  const offset = pageParam;
+  const term = `%${searchTerm.trim()}%`;
+
+  // 1. Buscar IDs de conversas onde mensagens contêm o termo
+  const { data: messageMatches } = await supabase
+    .from('messages')
+    .select('conversation_id')
+    .ilike('body', term);
+
+  // 2. Buscar IDs de contatos que correspondem ao termo
+  const { data: contactMatches } = await supabase
+    .from('contacts')
+    .select('id')
+    .or(`display_name.ilike.${term},first_name.ilike.${term},last_name.ilike.${term},phone_number.ilike.${term},wa_id.ilike.${term}`);
+
+  // 3. Combinar IDs únicos
+  const matchedConvIds = new Set<number>();
+  messageMatches?.forEach(m => matchedConvIds.add(m.conversation_id));
+
+  if (contactMatches && contactMatches.length > 0) {
+    const contactIds = contactMatches.map(c => c.id);
+    const { data: contactConvs } = await supabase
+      .from('conversations')
+      .select('id')
+      .in('contact_id', contactIds);
+    contactConvs?.forEach(cc => matchedConvIds.add(cc.id));
+  }
+
+  const allIds = Array.from(matchedConvIds);
+  const totalCount = allIds.length;
+
+  if (allIds.length === 0) {
+    return { conversations: [], total: 0, hasMore: false, offset: 0 };
+  }
+
+  // 4. Buscar conversas paginadas
+  const { data: conversations } = await supabase
+    .from('conversations')
+    .select(`
+      *,
+      contact:contacts(*),
+      assigned_user:profiles(*),
+      unit:units(*)
+    `)
+    .in('id', allIds)
+    .order('last_message_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (!conversations) {
+    return { conversations: [], total: totalCount, hasMore: false, offset: 0 };
+  }
+
+  // 5. Tags em batch
+  const convIds = conversations.map(c => c.id);
+  const tagsByConvId = await fetchTagsBatch(convIds);
+
+  const conversationsWithDetails = conversations
+    .filter(conv => conv.contact)
+    .map(conv => ({
+      ...conv,
+      tags: tagsByConvId[conv.id] || [],
+      last_message_preview: conv.last_message_preview || 'Sem mensagens',
+      pending_messages_count: 0,
+    }));
+
+  return {
+    conversations: conversationsWithDetails as ConversationWithDetails[],
+    total: totalCount,
+    hasMore: (offset + conversationsWithDetails.length) < totalCount,
+    offset: offset + conversationsWithDetails.length,
+  };
+}
+
+/**
+ * 📋 Fetch padrão de conversas via API (sem filtro especial)
+ */
+async function fetchConversationsDefault(
+  { pageParam = 0 }
+): Promise<ConversationsPage> {
+  const limit = CONVERSATIONS_PER_PAGE;
+  const offset = pageParam;
+
+  const endpoint = `${API_BASE}/api/conversations?limit=${limit}&offset=${offset}`;
   const response = await authFetch(endpoint, { method: 'GET' });
 
   if (!response.ok) {
@@ -82,29 +239,10 @@ async function fetchConversations(
     throw new Error(result.error || 'Erro ao carregar conversas');
   }
 
-  // 🚀 OTIMIZAÇÃO: Buscar tags de TODAS as conversas de uma vez (batch query)
   const conversations = result.conversations || [];
   const conversationIds = conversations.map((c: any) => c.id);
+  const tagsByConvId = await fetchTagsBatch(conversationIds);
 
-  let tagsByConvId: Record<string, any[]> = {};
-
-  if (conversationIds.length > 0) {
-    const { data: allTags } = await supabase
-      .from('conversation_tags')
-      .select('conversation_id, tag:tags(*)')
-      .in('conversation_id', conversationIds);
-
-    // Agrupar tags por conversation_id
-    if (allTags) {
-      tagsByConvId = allTags.reduce((acc: Record<string, any[]>, ct: any) => {
-        if (!acc[ct.conversation_id]) acc[ct.conversation_id] = [];
-        if (ct.tag) acc[ct.conversation_id].push(ct.tag);
-        return acc;
-      }, {});
-    }
-  }
-
-  // Mapear conversas com suas tags
   const conversationsWithTags = conversations.map((conv: any) => ({
     ...conv,
     tags: tagsByConvId[conv.id] || []
@@ -125,22 +263,29 @@ export function useConversations(options: UseConversationsOptions = {}) {
   const queryClient = useQueryClient();
   const { enabled = true, tagId = null, search = null } = options;
 
-  // Filtros para a query key (para cache separado por filtro)
+  // Filtros para a query key (cache separado por filtro)
   const filters = { tagId, search };
 
-  // 🚀 useInfiniteQuery - Perfeito para scroll infinito!
+  // Escolher a função de fetch baseado nos filtros ativos
+  const queryFn = useCallback((ctx: { pageParam?: number }) => {
+    if (tagId) {
+      return fetchConversationsByTag(ctx as { pageParam: number }, tagId);
+    }
+    if (search && search.trim().length >= 2) {
+      return fetchConversationsBySearch(ctx as { pageParam: number }, search);
+    }
+    return fetchConversationsDefault(ctx as { pageParam: number });
+  }, [tagId, search]);
+
   const query = useInfiniteQuery({
     queryKey: queryKeys.conversations.infinite(filters),
-    queryFn: (ctx) => fetchConversations(ctx, filters),
+    queryFn,
     initialPageParam: 0,
     getNextPageParam: (lastPage) => {
-      // Se não houver mais conversas, retorna undefined (para de paginar)
       if (!lastPage.hasMore) return undefined;
-      // Retorna o próximo offset
       return lastPage.offset;
     },
     enabled,
-    // Manter dados anteriores enquanto carrega novos (evita flicker)
     placeholderData: (previousData) => previousData,
   });
 
