@@ -68,6 +68,41 @@ async function fetchTagsBatch(conversationIds: number[]): Promise<Record<number,
 }
 
 /**
+ * Calcula mensagens pendentes em batch para uma lista de conversas
+ * (conta inbound consecutivas desde a última outbound)
+ */
+async function fetchPendingCountsBatch(conversationIds: number[]): Promise<Record<number, number>> {
+  if (conversationIds.length === 0) return {};
+
+  const { data: recentMsgs } = await supabase
+    .from('messages')
+    .select('conversation_id, direction')
+    .in('conversation_id', conversationIds)
+    .order('sent_at', { ascending: false })
+    .limit(conversationIds.length * 20);
+
+  const pendingByConvId: Record<number, number> = {};
+  if (recentMsgs) {
+    const msgsByConv: Record<number, { direction: string }[]> = {};
+    for (const msg of recentMsgs) {
+      if (!msgsByConv[msg.conversation_id]) msgsByConv[msg.conversation_id] = [];
+      if (msgsByConv[msg.conversation_id].length < 20) {
+        msgsByConv[msg.conversation_id].push(msg);
+      }
+    }
+    for (const [convId, msgs] of Object.entries(msgsByConv)) {
+      let count = 0;
+      for (const msg of msgs) {
+        if (msg.direction === 'inbound') count++;
+        else if (msg.direction === 'outbound') break;
+      }
+      pendingByConvId[Number(convId)] = count;
+    }
+  }
+  return pendingByConvId;
+}
+
+/**
  * 🏷️ Fetch de conversas filtradas por TAG - direto no Supabase
  * Busca conversation_tags → conversations com paginação
  */
@@ -112,9 +147,12 @@ async function fetchConversationsByTag(
     return { conversations: [], total: totalCount, hasMore: false, offset: 0 };
   }
 
-  // 3. Buscar tags em batch
+  // 3. Buscar tags e pendentes em batch
   const convIds = conversations.map(c => c.id);
-  const tagsByConvId = await fetchTagsBatch(convIds);
+  const [tagsByConvId, pendingByConvId] = await Promise.all([
+    fetchTagsBatch(convIds),
+    fetchPendingCountsBatch(convIds),
+  ]);
 
   // 4. Montar conversas com tags e preview
   const conversationsWithDetails = conversations
@@ -123,7 +161,7 @@ async function fetchConversationsByTag(
       ...conv,
       tags: tagsByConvId[conv.id] || [],
       last_message_preview: conv.last_message_preview || 'Sem mensagens',
-      pending_messages_count: 0,
+      pending_messages_count: pendingByConvId[conv.id] || 0,
     }));
 
   return {
@@ -195,9 +233,12 @@ async function fetchConversationsBySearch(
     return { conversations: [], total: totalCount, hasMore: false, offset: 0 };
   }
 
-  // 5. Tags em batch
+  // 5. Tags e pendentes em batch
   const convIds = conversations.map(c => c.id);
-  const tagsByConvId = await fetchTagsBatch(convIds);
+  const [tagsByConvId, pendingByConvId] = await Promise.all([
+    fetchTagsBatch(convIds),
+    fetchPendingCountsBatch(convIds),
+  ]);
 
   const conversationsWithDetails = conversations
     .filter(conv => conv.contact)
@@ -205,7 +246,7 @@ async function fetchConversationsBySearch(
       ...conv,
       tags: tagsByConvId[conv.id] || [],
       last_message_preview: conv.last_message_preview || 'Sem mensagens',
-      pending_messages_count: 0,
+      pending_messages_count: pendingByConvId[conv.id] || 0,
     }));
 
   return {
