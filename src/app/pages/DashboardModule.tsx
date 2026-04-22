@@ -757,6 +757,16 @@ export function DashboardModule() {
   // RENDER
   // ═══════════════════════════════════════════════
 
+  // Calcular intervalo dinâmico para labels do eixo X (evita sobreposição)
+  const xAxisInterval = useMemo(() => {
+    const totalDays = conversationsByDay.length;
+    if (totalDays <= 7) return 0; // Mostrar todos
+    if (totalDays <= 15) return 1; // Pular 1
+    if (totalDays <= 30) return 3; // Pular 3
+    if (totalDays <= 60) return 6; // Pular 6
+    return Math.floor(totalDays / 10); // ~10 labels no máximo
+  }, [conversationsByDay.length]);
+
   const tooltipStyle = {
     backgroundColor: 'white',
     border: '1px solid #e2e8f0',
@@ -931,7 +941,7 @@ export function DashboardModule() {
 
         {/* ── ROW 1: Atividade Diária + Status das Conversas ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md overflow-hidden">
             <CardHeader>
               <CardTitle>Atividade Diária</CardTitle>
               <CardDescription>Novas conversas ao longo do tempo</CardDescription>
@@ -946,7 +956,7 @@ export function DashboardModule() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
+                  <XAxis dataKey="date" stroke="#64748b" fontSize={11} angle={-45} textAnchor="end" height={70} interval={xAxisInterval} />
                   <YAxis stroke="#64748b" fontSize={12} />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Legend />
@@ -965,7 +975,7 @@ export function DashboardModule() {
           </Card>
 
           {/* Status das Conversas (PieChart corrigido) */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md overflow-hidden">
             <CardHeader>
               <CardTitle>Distribuição por Status</CardTitle>
               <CardDescription>Status atual das conversas</CardDescription>
@@ -1003,7 +1013,7 @@ export function DashboardModule() {
         {/* ── ROW 2: Atendimentos por Unidade + Conversas por Categoria ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Atendimentos por Unidade */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md overflow-hidden">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="w-5 h-5 text-[#0028e6]" />
@@ -1040,7 +1050,7 @@ export function DashboardModule() {
           </Card>
 
           {/* Conversas por Categoria */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md overflow-hidden">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Briefcase className="w-5 h-5 text-[#8b5cf6]" />
@@ -1081,7 +1091,7 @@ export function DashboardModule() {
         {/* ── ROW 3: Funil de Leads + Leads por Origem ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Funil de Leads (BarChart vertical) */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md overflow-hidden">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Target className="w-5 h-5 text-[#0028e6]" />
@@ -1111,7 +1121,7 @@ export function DashboardModule() {
           </Card>
 
           {/* Leads por Origem (PieChart) */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md overflow-hidden">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-[#10b981]" />
@@ -1151,7 +1161,7 @@ export function DashboardModule() {
 
         {/* ── ROW 4: Volume por Horário + Top Atendentes ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md overflow-hidden">
             <CardHeader>
               <CardTitle>Volume por Horário</CardTitle>
               <CardDescription>Distribuição de mensagens ao longo do dia</CardDescription>
@@ -1171,7 +1181,7 @@ export function DashboardModule() {
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md overflow-hidden">
             <CardHeader>
               <CardTitle>Top Atendentes</CardTitle>
               <CardDescription>Atendentes com mais conversas no período</CardDescription>
@@ -1198,7 +1208,7 @@ export function DashboardModule() {
 
         {/* ── ROW 5: Tempo de Resposta + Tipos de Mensagens ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md overflow-hidden">
             <CardHeader>
               <CardTitle>Tempo de Resposta</CardTitle>
               <CardDescription>Evolução do tempo médio de primeira resposta (min)</CardDescription>
@@ -1207,7 +1217,7 @@ export function DashboardModule() {
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={responseTimeData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
+                  <XAxis dataKey="date" stroke="#64748b" fontSize={11} angle={-45} textAnchor="end" height={70} interval={xAxisInterval} />
                   <YAxis stroke="#64748b" fontSize={12} label={{ value: 'Minutos', angle: -90, position: 'insideLeft' }} />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Legend />
@@ -1234,7 +1244,7 @@ export function DashboardModule() {
           </Card>
 
           {/* Tipos de Mensagens (PieChart corrigido) */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md overflow-hidden">
             <CardHeader>
               <CardTitle>Tipos de Mensagens</CardTitle>
               <CardDescription>Distribuição por tipo de conteúdo</CardDescription>
@@ -1271,7 +1281,7 @@ export function DashboardModule() {
 
         {/* ── ROW 6: Conversas por Tag ── */}
         <div className="grid grid-cols-1 gap-6">
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md overflow-hidden">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Tag className="w-5 h-5 text-[#6366f1]" />
